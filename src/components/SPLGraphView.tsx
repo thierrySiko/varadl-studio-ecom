@@ -1,0 +1,373 @@
+import { useEffect, useMemo, useRef } from "react";
+import ReactFlow, {
+  Background,
+  Controls,
+  MarkerType,
+  Position,
+  useEdgesState,
+  useNodesState,
+} from "reactflow";
+import type { Edge, Node, NodeTypes } from "reactflow";
+import { toPng, toSvg } from "html-to-image";
+import "reactflow/dist/style.css";
+
+import { getLayoutedElements } from "./graph-layout";
+import ComponentNode from "./nodes/ComponentNode";
+import VariationPointNode from "./nodes/VariationPointNode";
+import VariantNode from "./nodes/VariantNode";
+import type { Architecture, ArchitecturalElement, Component, Constraint } from "../model/varadl-types";
+
+interface Props {
+  architecture: Architecture;
+  selection?: Record<string, string[]>;
+}
+
+const nodeTypes: NodeTypes = {
+  component: ComponentNode,
+  variationPoint: VariationPointNode,
+  variant: VariantNode,
+};
+
+function isComponent(element: ArchitecturalElement): element is Component {
+  return element.kind === "component";
+}
+
+function constraintColor(type: Constraint["type"]) {
+  return type === "requires" ? "#16a34a" : "#dc2626";
+}
+
+function download(dataUrl: string, filename: string) {
+  const a = document.createElement("a");
+  a.href = dataUrl;
+  a.download = filename;
+  a.click();
+}
+
+export default function SPLGraphView({ architecture, selection }: Props) {
+  const ref = useRef<HTMLDivElement>(null);
+
+  const layout = useMemo(() => {
+    const nodes: Node[] = [];
+    const edges: Edge[] = [];
+    const entityToNodeId = new Map<string, string>();
+
+    nodes.push({
+      id: "root",
+      type: "component",
+      position: { x: 0, y: 0 },
+      sourcePosition: Position.Bottom,
+      targetPosition: Position.Top,
+      data: {
+        label: architecture.name,
+        subtitle: "Architecture de référence SPL",
+        details: "Composants communs + points de variation",
+        kind: "product",
+        badge: "SPL",
+      },
+    });
+
+    architecture.elements
+      .filter(isComponent)
+      .forEach((component, index) => {
+        const id = `core-${component.name}-${index}`;
+        entityToNodeId.set(component.name, id);
+
+        nodes.push({
+          id,
+          type: "component",
+          position: { x: 0, y: 0 },
+          sourcePosition: Position.Bottom,
+          targetPosition: Position.Top,
+          data: {
+            label: component.name,
+            subtitle:
+              component.ports.length > 0
+                ? component.ports.map((p) => p.name).join(", ")
+                : "Aucun port",
+            details: "Composant commun",
+            kind: component.optional ? "optional" : "core",
+            badge: component.optional ? "optional" : "core",
+          },
+        });
+
+        edges.push({
+          id: `root-core-${index}`,
+          source: "root",
+          target: id,
+          type: "smoothstep",
+          markerEnd: {
+            type: MarkerType.ArrowClosed,
+            color: "#64748b",
+          },
+          style: {
+            stroke: "#64748b",
+            strokeWidth: 1.8,
+          },
+        });
+      });
+
+    architecture.variationPoints.forEach((vp) => {
+      const vpId = `vp-${vp.name}`;
+      entityToNodeId.set(vp.name, vpId);
+
+      nodes.push({
+        id: vpId,
+        type: "variationPoint",
+        position: { x: 0, y: 0 },
+        sourcePosition: Position.Bottom,
+        targetPosition: Position.Top,
+        data: {
+          label: vp.name,
+          type: vp.type,
+          selected: (selection?.[vp.name]?.length ?? 0) > 0,
+        },
+      });
+
+      edges.push({
+        id: `root-vp-${vp.name}`,
+        source: "root",
+        target: vpId,
+        type: "smoothstep",
+        markerEnd: {
+          type: MarkerType.ArrowClosed,
+          color: "#ea580c",
+        },
+        style: {
+          stroke: "#ea580c",
+          strokeWidth: 2,
+        },
+      });
+
+      vp.variants.forEach((variant) => {
+        const variantId = `variant-${vp.name}-${variant.name}`;
+        const selected = selection?.[vp.name]?.includes(variant.name) ?? false;
+        entityToNodeId.set(variant.name, variantId);
+
+        nodes.push({
+          id: variantId,
+          type: "variant",
+          position: { x: 0, y: 0 },
+          sourcePosition: Position.Bottom,
+          targetPosition: Position.Top,
+          data: {
+            label: variant.name,
+            selected,
+            details: selected ? "Activée dans la configuration" : "Disponible",
+          },
+        });
+
+        edges.push({
+          id: `${vpId}-${variantId}`,
+          source: vpId,
+          target: variantId,
+          label: vp.type,
+          type: "smoothstep",
+          markerEnd: {
+            type: MarkerType.ArrowClosed,
+            color: selected ? "#16a34a" : "#0ea5e9",
+          },
+          style: {
+            stroke: selected ? "#16a34a" : "#0ea5e9",
+            strokeWidth: selected ? 2.4 : 1.8,
+          },
+          labelStyle: {
+            fill: selected ? "#15803d" : "#0f172a",
+            fontSize: 11,
+            fontWeight: 700,
+          },
+          labelBgStyle: {
+            fill: "#f8fafc",
+            fillOpacity: 0.9,
+          },
+        });
+
+        variant.elements
+          .filter(isComponent)
+          .forEach((component, index) => {
+            const compId = `variant-comp-${variant.name}-${component.name}-${index}`;
+            entityToNodeId.set(component.name, compId);
+
+            nodes.push({
+              id: compId,
+              type: "component",
+              position: { x: 0, y: 0 },
+              sourcePosition: Position.Bottom,
+              targetPosition: Position.Top,
+              data: {
+                label: component.name,
+                subtitle:
+                  component.ports.length > 0
+                    ? component.ports.map((p) => p.name).join(", ")
+                    : "Aucun port",
+                details: `Introduit par ${variant.name}`,
+                kind:
+                  component.name.toLowerCase().includes("database") ||
+                  component.name.toLowerCase().includes("mongo") ||
+                  component.name.toLowerCase().includes("postgres")
+                    ? "database"
+                    : "variant",
+                badge: "component",
+              },
+            });
+
+            edges.push({
+              id: `${variantId}-${compId}`,
+              source: variantId,
+              target: compId,
+              type: "smoothstep",
+              markerEnd: {
+                type: MarkerType.ArrowClosed,
+                color: "#94a3b8",
+              },
+              style: {
+                stroke: "#94a3b8",
+                strokeWidth: 1.6,
+              },
+            });
+          });
+      });
+    });
+
+    architecture.constraints.forEach((constraint, index) => {
+      const source = entityToNodeId.get(constraint.source);
+      const target = entityToNodeId.get(constraint.target);
+
+      if (!source || !target) return;
+
+      edges.push({
+        id: `constraint-${constraint.source}-${constraint.target}-${index}`,
+        source,
+        target,
+        label: constraint.type,
+        type: "bezier",
+        markerEnd: {
+          type: MarkerType.ArrowClosed,
+          color: constraintColor(constraint.type),
+        },
+        style: {
+          stroke: constraintColor(constraint.type),
+          strokeDasharray: "6 4",
+          strokeWidth: 2,
+        },
+        labelStyle: {
+          fill: constraintColor(constraint.type),
+          fontSize: 11,
+          fontWeight: 800,
+        },
+        labelBgStyle: {
+          fill: "#f8fafc",
+          fillOpacity: 0.9,
+        },
+      });
+    });
+
+    return getLayoutedElements(nodes, edges, "TB");
+  }, [architecture, selection]);
+
+  const [nodes, setNodes, onNodesChange] = useNodesState(layout.nodes);
+  const [edges, setEdges, onEdgesChange] = useEdgesState(layout.edges);
+
+  useEffect(() => {
+    setNodes(layout.nodes);
+    setEdges(layout.edges);
+  }, [layout, setNodes, setEdges]);
+
+  function resetLayout() {
+    const layouted = getLayoutedElements(
+      nodes.map((n) => ({ ...n, position: { x: 0, y: 0 } })),
+      edges,
+      "TB"
+    );
+
+    setNodes(layouted.nodes);
+    setEdges(layouted.edges);
+  }
+
+  async function exportPng() {
+    if (!ref.current) return;
+
+    const data = await toPng(ref.current, {
+      cacheBust: true,
+      pixelRatio: 2,
+      backgroundColor: "#f8fafc",
+    });
+
+    download(data, "spl-architecture.png");
+  }
+
+  async function exportSvg() {
+    if (!ref.current) return;
+
+    const data = await toSvg(ref.current, {
+      cacheBust: true,
+      backgroundColor: "#f8fafc",
+    });
+
+    download(data, "spl-architecture.svg");
+  }
+
+  return (
+    <div style={{ marginBottom: 20 }}>
+      <h2>Graphe SPL</h2>
+      <div style={{ marginBottom: 10, display: "flex", gap: 10, flexWrap: "wrap" }}>
+        <button
+          onClick={resetLayout}
+          style={{ padding: "6px 10px", cursor: "pointer" }}
+        >
+          Réorganiser automatiquement
+        </button>
+
+        <span style={{ color: "#475569" }}>Tu peux déplacer les blocs par glisser-déposer.</span>
+
+        <button
+          onClick={exportPng}
+          style={{ padding: "6px 10px", cursor: "pointer" }}
+        >
+          Export PNG
+        </button>
+
+        <button
+          onClick={exportSvg}
+          style={{ padding: "6px 10px", cursor: "pointer" }}
+        >
+          Export SVG
+        </button>
+
+        <span style={{ color: "#2563eb" }}><strong>Component</strong> : bleu</span>
+        <span style={{ color: "#ea580c" }}><strong>VP</strong> : orange pointillé</span>
+        <span style={{ color: "#0ea5e9" }}><strong>Variant</strong> : cyan</span>
+        <span style={{ color: "#16a34a" }}><strong>Selected</strong> : vert</span>
+        <span style={{ color: "#dc2626" }}><strong>Constraint</strong> : pointillé</span>
+      </div>
+
+      <div
+        ref={ref}
+        style={{
+          height: 620,
+          border: "1px solid #ddd",
+          borderRadius: 8,
+          overflow: "hidden",
+          background: "#f8fafc",
+        }}
+      >
+        <ReactFlow
+          nodes={nodes}
+          edges={edges}
+          nodeTypes={nodeTypes}
+          onNodesChange={onNodesChange}
+          onEdgesChange={onEdgesChange}
+          fitView
+          fitViewOptions={{ padding: 0.25 }}
+          nodesDraggable
+          nodesConnectable={false}
+          elementsSelectable
+          panOnDrag
+          zoomOnScroll
+        >
+          <Background />
+          <Controls />
+        </ReactFlow>
+      </div>
+    </div>
+  );
+}
