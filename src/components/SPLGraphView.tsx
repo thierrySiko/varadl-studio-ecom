@@ -1,13 +1,16 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useCallback } from "react";
 import ReactFlow, {
   Background,
   Controls,
   MarkerType,
   Position,
+  ConnectionMode,
   useEdgesState,
   useNodesState,
+  addEdge,
+  reconnectEdge,
 } from "reactflow";
-import type { Edge, Node, NodeTypes } from "reactflow";
+import type { Edge, Node, NodeTypes, Connection } from "reactflow";
 import { toPng, toSvg } from "html-to-image";
 import "reactflow/dist/style.css";
 
@@ -15,7 +18,12 @@ import { getLayoutedElements } from "./graph-layout";
 import ComponentNode from "./nodes/ComponentNode";
 import VariationPointNode from "./nodes/VariationPointNode";
 import VariantNode from "./nodes/VariantNode";
-import type { Architecture, ArchitecturalElement, Component, Constraint } from "../model/varadl-types";
+import type {
+  Architecture,
+  ArchitecturalElement,
+  Component,
+  Constraint,
+} from "../model/varadl-types";
 
 interface Props {
   architecture: Architecture;
@@ -36,11 +44,44 @@ function constraintColor(type: Constraint["type"]) {
   return type === "requires" ? "#16a34a" : "#dc2626";
 }
 
+function constraintDash(type: Constraint["type"]) {
+  return type === "requires" ? "6 5" : "9 5";
+}
+
 function download(dataUrl: string, filename: string) {
   const a = document.createElement("a");
   a.href = dataUrl;
   a.download = filename;
   a.click();
+}
+
+function edgeMarker(color: string) {
+  return {
+    type: MarkerType.ArrowClosed,
+    color,
+  };
+}
+
+function commonEdgeStyle(color: string, width = 2) {
+  return {
+    stroke: color,
+    strokeWidth: width,
+  };
+}
+
+function edgeLabelStyle(color: string) {
+  return {
+    fill: color,
+    fontSize: 11,
+    fontWeight: 800,
+  };
+}
+
+function edgeLabelBgStyle() {
+  return {
+    fill: "#f8fafc",
+    fillOpacity: 0.92,
+  };
 }
 
 export default function SPLGraphView({ architecture, selection }: Props) {
@@ -94,15 +135,10 @@ export default function SPLGraphView({ architecture, selection }: Props) {
           id: `root-core-${index}`,
           source: "root",
           target: id,
-          type: "smoothstep",
-          markerEnd: {
-            type: MarkerType.ArrowClosed,
-            color: "#64748b",
-          },
-          style: {
-            stroke: "#64748b",
-            strokeWidth: 1.8,
-          },
+          type: "bezier",
+          markerEnd: edgeMarker("#64748b"),
+          style: commonEdgeStyle("#64748b", 1.8),
+          interactionWidth: 24,
         });
       });
 
@@ -127,20 +163,19 @@ export default function SPLGraphView({ architecture, selection }: Props) {
         id: `root-vp-${vp.name}`,
         source: "root",
         target: vpId,
-        type: "smoothstep",
-        markerEnd: {
-          type: MarkerType.ArrowClosed,
-          color: "#ea580c",
-        },
-        style: {
-          stroke: "#ea580c",
-          strokeWidth: 2,
-        },
+        label: "variation point",
+        type: "bezier",
+        markerEnd: edgeMarker("#ea580c"),
+        style: commonEdgeStyle("#ea580c", 2),
+        labelStyle: edgeLabelStyle("#ea580c"),
+        labelBgStyle: edgeLabelBgStyle(),
+        interactionWidth: 24,
       });
 
       vp.variants.forEach((variant) => {
         const variantId = `variant-${vp.name}-${variant.name}`;
         const selected = selection?.[vp.name]?.includes(variant.name) ?? false;
+
         entityToNodeId.set(variant.name, variantId);
 
         nodes.push({
@@ -161,24 +196,12 @@ export default function SPLGraphView({ architecture, selection }: Props) {
           source: vpId,
           target: variantId,
           label: vp.type,
-          type: "smoothstep",
-          markerEnd: {
-            type: MarkerType.ArrowClosed,
-            color: selected ? "#16a34a" : "#0ea5e9",
-          },
-          style: {
-            stroke: selected ? "#16a34a" : "#0ea5e9",
-            strokeWidth: selected ? 2.4 : 1.8,
-          },
-          labelStyle: {
-            fill: selected ? "#15803d" : "#0f172a",
-            fontSize: 11,
-            fontWeight: 700,
-          },
-          labelBgStyle: {
-            fill: "#f8fafc",
-            fillOpacity: 0.9,
-          },
+          type: "bezier",
+          markerEnd: edgeMarker(selected ? "#16a34a" : "#0ea5e9"),
+          style: commonEdgeStyle(selected ? "#16a34a" : "#0ea5e9", selected ? 2.6 : 1.9),
+          labelStyle: edgeLabelStyle(selected ? "#15803d" : "#0f172a"),
+          labelBgStyle: edgeLabelBgStyle(),
+          interactionWidth: 24,
         });
 
         variant.elements
@@ -214,15 +237,13 @@ export default function SPLGraphView({ architecture, selection }: Props) {
               id: `${variantId}-${compId}`,
               source: variantId,
               target: compId,
-              type: "smoothstep",
-              markerEnd: {
-                type: MarkerType.ArrowClosed,
-                color: "#94a3b8",
-              },
-              style: {
-                stroke: "#94a3b8",
-                strokeWidth: 1.6,
-              },
+              label: "activates",
+              type: "bezier",
+              markerEnd: edgeMarker("#94a3b8"),
+              style: commonEdgeStyle("#94a3b8", 1.6),
+              labelStyle: edgeLabelStyle("#64748b"),
+              labelBgStyle: edgeLabelBgStyle(),
+              interactionWidth: 24,
             });
           });
       });
@@ -240,24 +261,16 @@ export default function SPLGraphView({ architecture, selection }: Props) {
         target,
         label: constraint.type,
         type: "bezier",
-        markerEnd: {
-          type: MarkerType.ArrowClosed,
-          color: constraintColor(constraint.type),
-        },
+        markerEnd: edgeMarker(constraintColor(constraint.type)),
         style: {
           stroke: constraintColor(constraint.type),
-          strokeDasharray: "6 4",
-          strokeWidth: 2,
+          strokeDasharray: constraintDash(constraint.type),
+          strokeWidth: 2.4,
         },
-        labelStyle: {
-          fill: constraintColor(constraint.type),
-          fontSize: 11,
-          fontWeight: 800,
-        },
-        labelBgStyle: {
-          fill: "#f8fafc",
-          fillOpacity: 0.9,
-        },
+        labelStyle: edgeLabelStyle(constraintColor(constraint.type)),
+        labelBgStyle: edgeLabelBgStyle(),
+        interactionWidth: 30,
+        animated: constraint.type === "requires",
       });
     });
 
@@ -271,6 +284,35 @@ export default function SPLGraphView({ architecture, selection }: Props) {
     setNodes(layout.nodes);
     setEdges(layout.edges);
   }, [layout, setNodes, setEdges]);
+
+  const onConnect = useCallback(
+    (connection: Connection) => {
+      setEdges((currentEdges) =>
+        addEdge(
+          {
+            ...connection,
+            id: `manual-${connection.source}-${connection.target}-${Date.now()}`,
+            type: "bezier",
+            label: "manual",
+            markerEnd: edgeMarker("#334155"),
+            style: commonEdgeStyle("#334155", 2),
+            labelStyle: edgeLabelStyle("#334155"),
+            labelBgStyle: edgeLabelBgStyle(),
+            interactionWidth: 24,
+          },
+          currentEdges
+        )
+      );
+    },
+    [setEdges]
+  );
+
+  const onReconnect = useCallback(
+    (oldEdge: Edge, newConnection: Connection) => {
+      setEdges((currentEdges) => reconnectEdge(oldEdge, newConnection, currentEdges));
+    },
+    [setEdges]
+  );
 
   function resetLayout() {
     const layouted = getLayoutedElements(
@@ -308,7 +350,7 @@ export default function SPLGraphView({ architecture, selection }: Props) {
 
   return (
     <div style={{ marginBottom: 20 }}>
-      <h2>Graphe SPL</h2>
+      <h2>Architecture de référence</h2>
       <div style={{ marginBottom: 10, display: "flex", gap: 10, flexWrap: "wrap" }}>
         <button
           onClick={resetLayout}
@@ -316,8 +358,6 @@ export default function SPLGraphView({ architecture, selection }: Props) {
         >
           Réorganiser automatiquement
         </button>
-
-        <span style={{ color: "#475569" }}>Tu peux déplacer les blocs par glisser-déposer.</span>
 
         <button
           onClick={exportPng}
@@ -336,14 +376,14 @@ export default function SPLGraphView({ architecture, selection }: Props) {
         <span style={{ color: "#2563eb" }}><strong>Component</strong> : bleu</span>
         <span style={{ color: "#ea580c" }}><strong>VP</strong> : orange pointillé</span>
         <span style={{ color: "#0ea5e9" }}><strong>Variant</strong> : cyan</span>
-        <span style={{ color: "#16a34a" }}><strong>Selected</strong> : vert</span>
-        <span style={{ color: "#dc2626" }}><strong>Constraint</strong> : pointillé</span>
+        <span style={{ color: "#16a34a" }}><strong>Selected / requires</strong> : vert</span>
+        <span style={{ color: "#dc2626" }}><strong>Excludes</strong> : rouge</span>
       </div>
 
       <div
         ref={ref}
         style={{
-          height: 620,
+          height: 660,
           border: "1px solid #ddd",
           borderRadius: 8,
           overflow: "hidden",
@@ -356,15 +396,25 @@ export default function SPLGraphView({ architecture, selection }: Props) {
           nodeTypes={nodeTypes}
           onNodesChange={onNodesChange}
           onEdgesChange={onEdgesChange}
+          onConnect={onConnect}
+          onReconnect={onReconnect}
           fitView
-          fitViewOptions={{ padding: 0.25 }}
+          fitViewOptions={{ padding: 0.22 }}
           nodesDraggable
-          nodesConnectable={false}
+          nodesConnectable
           elementsSelectable
+          edgesUpdatable
+          connectionMode={ConnectionMode.Loose}
           panOnDrag
           zoomOnScroll
+          elevateEdgesOnSelect
+          defaultEdgeOptions={{
+            type: "bezier",
+            markerEnd: edgeMarker("#64748b"),
+            style: commonEdgeStyle("#64748b", 2),
+          }}
         >
-          <Background />
+          <Background gap={18} size={1} />
           <Controls />
         </ReactFlow>
       </div>

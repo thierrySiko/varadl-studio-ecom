@@ -4,6 +4,7 @@ import ReactFlow, {
   Controls,
   MarkerType,
   Position,
+  ConnectionMode,
   useEdgesState,
   useNodesState,
   addEdge,
@@ -12,6 +13,8 @@ import ReactFlow, {
 import type { Edge, Node, Connection, NodeTypes } from "reactflow";
 import "reactflow/dist/style.css";
 import { toPng, toSvg } from "html-to-image";
+
+import { generateExecutableProductZip } from "../generator/product-generator";
 
 import { getLayoutedElements } from "./graph-layout";
 import ComponentNode from "./nodes/ComponentNode";
@@ -23,11 +26,13 @@ import type {
   Connector,
   Constraint,
   ElementOrigin,
+  ProductArchitecture,
 } from "../model/varadl-types";
 
 interface Props {
   productElements: ArchitecturalElement[];
   architecture?: Architecture | null;
+  product?: ProductArchitecture | null;
 }
 
 const nodeTypes: NodeTypes = {
@@ -46,6 +51,10 @@ function constraintColor(type: Constraint["type"]) {
   return type === "requires" ? "#16a34a" : "#dc2626";
 }
 
+function constraintDash(type: Constraint["type"]) {
+  return type === "requires" ? "6 5" : "9 5";
+}
+
 function componentKindFromOrigin(origin?: ElementOrigin) {
   if (origin === "optional") return "optional";
   if (origin === "database") return "database";
@@ -60,9 +69,39 @@ function downloadDataUrl(dataUrl: string, filename: string) {
   a.click();
 }
 
+function edgeMarker(color: string) {
+  return {
+    type: MarkerType.ArrowClosed,
+    color,
+  };
+}
+
+function commonEdgeStyle(color: string, width = 2) {
+  return {
+    stroke: color,
+    strokeWidth: width,
+  };
+}
+
+function edgeLabelStyle(color: string) {
+  return {
+    fontSize: 11,
+    fontWeight: 700,
+    fill: color,
+  };
+}
+
+function edgeLabelBgStyle() {
+  return {
+    fill: "#f8fafc",
+    fillOpacity: 0.9,
+  };
+}
+
 export default function GraphViewReactFlow({
   productElements,
   architecture,
+  product,
 }: Props) {
   const exportRef = useRef<HTMLDivElement | null>(null);
 
@@ -99,23 +138,11 @@ export default function GraphViewReactFlow({
         target: c.targetComponent,
         label: `${c.sourcePort} → ${c.targetPort}`,
         type: "bezier",
-        markerEnd: {
-          type: MarkerType.ArrowClosed,
-          color: "#64748b",
-        },
-        style: {
-          stroke: "#64748b",
-          strokeWidth: 2,
-        },
-        labelStyle: {
-          fontSize: 11,
-          fontWeight: 600,
-          fill: "#334155",
-        },
-        labelBgStyle: {
-          fill: "#f8fafc",
-          fillOpacity: 0.85,
-        },
+        markerEnd: edgeMarker("#64748b"),
+        style: commonEdgeStyle("#64748b", 2),
+        labelStyle: edgeLabelStyle("#334155"),
+        labelBgStyle: edgeLabelBgStyle(),
+        interactionWidth: 24,
       });
     });
 
@@ -131,24 +158,16 @@ export default function GraphViewReactFlow({
             target: constraint.target,
             label: constraint.type,
             type: "bezier",
-            markerEnd: {
-              type: MarkerType.ArrowClosed,
-              color: constraintColor(constraint.type),
-            },
+            markerEnd: edgeMarker(constraintColor(constraint.type)),
             style: {
               stroke: constraintColor(constraint.type),
-              strokeDasharray: "6 4",
-              strokeWidth: 2,
+              strokeDasharray: constraintDash(constraint.type),
+              strokeWidth: 2.4,
             },
-            labelStyle: {
-              fontSize: 11,
-              fontWeight: 700,
-              fill: constraintColor(constraint.type),
-            },
-            labelBgStyle: {
-              fill: "#f8fafc",
-              fillOpacity: 0.9,
-            },
+            labelStyle: edgeLabelStyle(constraintColor(constraint.type)),
+            labelBgStyle: edgeLabelBgStyle(),
+            interactionWidth: 30,
+            animated: constraint.type === "requires",
           });
         });
     }
@@ -170,15 +189,14 @@ export default function GraphViewReactFlow({
         addEdge(
           {
             ...connection,
+            id: `manual-${connection.source}-${connection.target}-${Date.now()}`,
             type: "bezier",
-            markerEnd: {
-              type: MarkerType.ArrowClosed,
-              color: "#64748b",
-            },
-            style: {
-              stroke: "#64748b",
-              strokeWidth: 2,
-            },
+            label: "manual",
+            markerEnd: edgeMarker("#334155"),
+            style: commonEdgeStyle("#334155", 2),
+            labelStyle: edgeLabelStyle("#334155"),
+            labelBgStyle: edgeLabelBgStyle(),
+            interactionWidth: 24,
           },
           eds
         )
@@ -228,6 +246,13 @@ export default function GraphViewReactFlow({
     downloadDataUrl(dataUrl, "varadl-product-architecture.svg");
   }
 
+  async function generateProductCode() {
+    await generateExecutableProductZip(
+      product?.name ?? "generated-product",
+      product?.elements ?? productElements
+    );
+  }
+
   return (
     <div style={{ marginTop: 20 }}>
       <div style={{ marginBottom: 10, display: "flex", gap: 12, flexWrap: "wrap" }}>
@@ -252,6 +277,25 @@ export default function GraphViewReactFlow({
           Export SVG
         </button>
 
+        <button
+          onClick={generateProductCode}
+          style={{
+            padding: "6px 10px",
+            cursor: "pointer",
+            border: "1px solid #16a34a",
+            background: "#dcfce7",
+            color: "#166534",
+            borderRadius: 6,
+            fontWeight: 700,
+          }}
+        >
+          Générer le produit exécutable
+        </button>
+
+        <span style={{ color: "#475569" }}>
+          Déplace les blocs et reconnecte les liens depuis les petits points.
+        </span>
+
         <span><strong>Core</strong> : bleu</span>
         <span style={{ color: "#f97316" }}><strong>Optional</strong> : orange</span>
         <span style={{ color: "#16a34a" }}><strong>Variant</strong> : vert</span>
@@ -261,7 +305,7 @@ export default function GraphViewReactFlow({
       <div
         ref={exportRef}
         style={{
-          height: 560,
+          height: 600,
           border: "1px solid #ddd",
           borderRadius: 8,
           overflow: "hidden",
@@ -277,17 +321,22 @@ export default function GraphViewReactFlow({
           onConnect={onConnect}
           onReconnect={onReconnect}
           fitView
+          fitViewOptions={{ padding: 0.22 }}
           nodesDraggable
           nodesConnectable
           elementsSelectable
+          edgesUpdatable
+          connectionMode={ConnectionMode.Loose}
+          panOnDrag
+          zoomOnScroll
+          elevateEdgesOnSelect
           defaultEdgeOptions={{
             type: "bezier",
-            markerEnd: {
-              type: MarkerType.ArrowClosed,
-            },
+            markerEnd: edgeMarker("#64748b"),
+            style: commonEdgeStyle("#64748b", 2),
           }}
         >
-          <Background />
+          <Background gap={18} size={1} />
           <Controls />
         </ReactFlow>
       </div>

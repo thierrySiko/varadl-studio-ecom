@@ -6,6 +6,15 @@ type VariantNodeData = {
   details?: string;
 };
 
+function handleStyle(color: string) {
+  return {
+    width: 9,
+    height: 9,
+    background: color,
+    border: "2px solid white",
+  };
+}
+
 export default function VariantNode({ data }: { data: VariantNodeData }) {
   const border = data.selected ? "#16a34a" : "#0ea5e9";
   const background = data.selected ? "#dcfce7" : "#ecfeff";
@@ -23,10 +32,10 @@ export default function VariantNode({ data }: { data: VariantNodeData }) {
         boxShadow: "0 4px 10px rgba(15, 23, 42, 0.08)",
       }}
     >
-      <Handle type="target" position={Position.Left} />
-      <Handle type="source" position={Position.Right} />
-      <Handle type="target" position={Position.Top} />
-      <Handle type="source" position={Position.Bottom} />
+      <Handle id="target-left" type="target" position={Position.Left} style={handleStyle(border)} />
+      <Handle id="target-top" type="target" position={Position.Top} style={handleStyle(border)} />
+      <Handle id="source-right" type="source" position={Position.Right} style={handleStyle(border)} />
+      <Handle id="source-bottom" type="source" position={Position.Bottom} style={handleStyle(border)} />
 
       <strong style={{ color: "#0f172a" }}>{data.label}</strong>
 

@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import ArchitectureEditor from "./components/ArchitectureEditor";
 import ConfigEditor from "./components/ConfigEditor";
 import ResultViewer from "./components/ResultViewer";
@@ -7,7 +7,6 @@ import ConstraintPanel from "./components/ConstraintPanel";
 import ConfigurationSpacePanel from "./components/ConfigurationSpacePanel";
 import GeneratedProductsPanel from "./components/GeneratedProductsPanel";
 import GraphViewReactFlow from "./components/GraphViewReactFlow";
-import FeatureModelPanel from "./components/FeatureModelPanel";
 import FeatureModelGraph from "./components/FeatureModelGraph";
 import SPLGraphView from "./components/SPLGraphView";
 
@@ -101,7 +100,7 @@ variationPoint BackendStyle alternative {
   }
 }
 
-variationPoint PaymentType alternative {
+variationPoint PaymentType or {
 
   variant StripeAdapter {
     component StripeAdapter {
@@ -120,7 +119,7 @@ variationPoint PaymentType alternative {
   }
 }
 
-variationPoint DeliveryType alternative {
+variationPoint DeliveryType or {
 
   variant StandardDelivery {
     component StandardDeliveryAdapter {
@@ -139,7 +138,7 @@ variationPoint DeliveryType alternative {
   }
 }
 
-variationPoint NotificationType alternative {
+variationPoint NotificationType or {
 
   variant EmailNotification {
     component EmailNotificationAdapter {
@@ -155,6 +154,14 @@ variationPoint NotificationType alternative {
     }
 
     connect NotificationService.channelOut -> SmsNotificationAdapter.notificationIn
+  }
+
+  variant PushNotification {
+    component PushNotificationAdapter {
+      port notificationIn
+    }
+
+    connect NotificationService.channelOut -> PushNotificationAdapter.notificationIn
   }
 }
 
@@ -235,16 +242,22 @@ constraint MobileApp requires REST
 constraint Microservices requires EventBus
 constraint EventBus requires MessageBroker
 constraint RecommendationEnabled requires CatalogService
+constraint RecommendationEnabled requires EventBus
+constraint EventBus requires CloudDeployment
+constraint CloudDeployment requires Microservices
 constraint MongoDB excludes RecommendationEnabled
+constraint MongoDB excludes EventBus
+constraint DockerCompose excludes CloudDeployment
+constraint PostgreSQL excludes MongoDB
 }`;
 
 const sampleConfiguration = `configuration BasicShop {
 
 select FrontendType = ReactWebApp
 select BackendStyle = ModularMonolith
-select PaymentType = StripeAdapter
-select DeliveryType = StandardDelivery
-select NotificationType = EmailNotification
+select PaymentType = StripeAdapter, PayPalAdapter
+select DeliveryType = StandardDelivery, ExpressDelivery
+select NotificationType = EmailNotification, SmsNotification, PushNotification
 select CommunicationStyle = REST
 select DatabaseType = PostgreSQL
 select DeploymentType = DockerCompose
@@ -468,81 +481,71 @@ export default function App() {
     );
   }, [displayedProduct]);
 
+  useEffect(() => {
+    deriveFromText();
+  }, []);
+
+  const workflowSteps = [
+    "1. Feature Model",
+    "2. Architecture SPL",
+    "3. Configuration",
+    "4. Validation / Solveur",
+    "5. Architecture dérivée",
+  ];
+
+  const sectionStyle = {
+    marginBottom: 24,
+    padding: 16,
+    border: "1px solid #e5e7eb",
+    borderRadius: 12,
+    background: "#ffffff",
+    boxShadow: "0 1px 2px rgba(15, 23, 42, 0.06)",
+  } as const;
+
   return (
     <div style={{ padding: 20, maxWidth: 1200, margin: "0 auto" }}>
       <h1>VarADL Studio</h1>
 
       <p>
         Prototype d&apos;ADL intégrant la variabilité architecturale et technologique des SPL.
-        Exemple courant : ligne de produits e-commerce avec frontend, backend, paiement,
-        livraison, notifications, communication, persistance et déploiement configurables.
+        Le flux commence par le Feature Model fonctionnel, puis projette les choix vers
+        l&apos;architecture VarADL, la configuration, la validation par solveur et l&apos;architecture dérivée.
       </p>
 
-      <ArchitectureEditor
-        value={architectureText}
-        onChange={setArchitectureText}
-      />
-
-      <ConfigEditor
-        value={displayedConfigText}
-        onChange={setConfigText}
-      />
-
-      <button
-        onClick={deriveFromText}
+      <div
         style={{
+          display: "flex",
+          flexWrap: "wrap",
+          gap: 8,
+          alignItems: "center",
           marginBottom: 20,
-          padding: "10px 16px",
-          cursor: "pointer",
+          padding: 12,
+          border: "1px solid #bfdbfe",
+          background: "#eff6ff",
+          borderRadius: 12,
         }}
       >
-        Charger architecture et configuration
-      </button>
-
-      {architecture && (
-        <>
-          <VariabilityPanel
-            variationPoints={architecture.variationPoints}
-            selection={selection}
-            onSelectOne={onSelectOne}
-            onToggleMany={onToggleMany}
-          />
-
-          {optionalComponents.length > 0 && (
-            <div style={{ marginBottom: 20 }}>
-              <h2>Options</h2>
-
-              {optionalComponents.map((flag) => (
-                <label key={flag} style={{ display: "block", marginBottom: 6 }}>
-                  <input
-                    type="checkbox"
-                    checked={flags.includes(flag)}
-                    onChange={() => toggleFlag(flag)}
-                  />{" "}
-                  {flag}
-                </label>
-              ))}
-            </div>
-          )}
-
-          <FeatureModelPanel
-            architecture={architecture}
-            selection={selection}
-          />
-
-          <FeatureModelGraph
-            architecture={architecture}
-            selection={selection}
-          />
-
-          <SPLGraphView
-            architecture={architecture}
-            selection={selection}
-          />
-
-          
-        </>
-      )}
+        {workflowSteps.map((step, index) => (
+          <div key={step} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span
+              style={{
+                padding: "8px 10px",
+                background: "#ffffff",
+                border: "1px solid #93c5fd",
+                borderRadius: 999,
+                fontSize: 13,
+                fontWeight: 600,
+                color: "#1d4ed8",
+              }}
+            >
+              {step}
+            </span>
+            {index < workflowSteps.length - 1 && (
+              <span style={{ color: "#2563eb", fontWeight: 700 }}>→</span>
+            )}
+          </div>
+        ))}
+      </div>
 
       {displayedErrors.length > 0 && (
         <div
@@ -564,47 +567,170 @@ export default function App() {
         </div>
       )}
 
-      <ResultViewer result={displayedResult} />
-
-      {architecture && displayedProduct && (
-        <ConstraintPanel
-          architecture={architecture}
-          activeComponents={activeComponents}
-        />
-      )}
-
-      {architecture && displayedProduct && (
-        <div style={{ marginBottom: 20 }}>
-          <h2>Architecture produit dérivée</h2>
-          <GraphViewReactFlow
-            productElements={displayedProduct.elements}
-            architecture={architecture}
-          />
-        </div>
-      )}
-
-      {architecture && <ConfigurationSpacePanel architecture={architecture} />}
-
       {architecture && (
-        <div style={{ marginBottom: 20 }}>
-          <button
-            onClick={() => setShowGeneratedProducts((prev) => !prev)}
-            style={{ padding: "10px 16px", cursor: "pointer" }}
-          >
-            {showGeneratedProducts
-              ? "Masquer les architectures générées"
-              : "Afficher les architectures générées"}
-          </button>
+        <>
+          <section style={sectionStyle}>
+            <h2>1. Feature Model fonctionnel</h2>
+            <p style={{ marginTop: 0, color: "#475569" }}>
+              Cette vue représente la variabilité fonctionnelle du produit. Les choix
+              technologiques restent décrits dans l&apos;architecture VarADL.
+            </p>
+            <FeatureModelGraph
+              architecture={architecture}
+              selection={selection}
+            />
+          </section>
 
-          {showGeneratedProducts && (
-            <div style={{ marginTop: 12 }}>
-              <GeneratedProductsPanel
-                architecture={architecture}
-                onLoadProduct={loadGeneratedProduct}
+          <details
+            style={{
+              ...sectionStyle,
+              marginTop: -8,
+              background: "#f8fafc",
+            }}
+          >
+            <summary style={{ cursor: "pointer", fontWeight: 700 }}>
+              Modifier le modèle VarADL et la configuration textuelle
+            </summary>
+
+            <p style={{ color: "#64748b", marginTop: 12 }}>
+              Ces éditeurs restent disponibles pour modifier directement la description
+              VarADL et la configuration produit, tout en gardant l'interface principale
+              centrée sur le workflow.
+            </p>
+
+            <button
+              onClick={deriveFromText}
+              style={{
+                marginTop: 8,
+                marginBottom: 16,
+                padding: "10px 16px",
+                cursor: "pointer",
+                border: "1px solid #bfdbfe",
+                borderRadius: 8,
+                background: "#eff6ff",
+                color: "#1d4ed8",
+                fontWeight: 700,
+              }}
+            >
+              Appliquer les modifications textuelles
+            </button>
+
+            {displayedErrors.length === 0 && displayedProduct && (
+              <div
+                style={{
+                  marginBottom: 16,
+                  padding: 10,
+                  border: "1px solid #bbf7d0",
+                  borderRadius: 8,
+                  background: "#f0fdf4",
+                  color: "#166534",
+                  fontWeight: 600,
+                }}
+              >
+                Modèle parsé, validé par le solveur SAT et architecture dérivée générée.
+              </div>
+            )}
+
+            <div style={{ marginTop: 16 }}>
+              <ArchitectureEditor
+                value={architectureText}
+                onChange={setArchitectureText}
+              />
+
+              <ConfigEditor
+                value={displayedConfigText}
+                onChange={setConfigText}
               />
             </div>
+          </details>
+
+          <section style={sectionStyle}>
+            <h2>2. Architecture de référence SPL</h2>
+            <p style={{ marginTop: 0, color: "#475569" }}>
+              Cette vue montre les composants, points de variation, variants architecturaux
+              et contraintes utilisés pour dériver les architectures produit.
+            </p>
+            <SPLGraphView
+              architecture={architecture}
+              selection={selection}
+            />
+          </section>
+
+          <section style={sectionStyle}>
+            <h2>3. Configuration produit</h2>
+            <VariabilityPanel
+              variationPoints={architecture.variationPoints}
+              selection={selection}
+              onSelectOne={onSelectOne}
+              onToggleMany={onToggleMany}
+            />
+
+            {optionalComponents.length > 0 && (
+              <div style={{ marginBottom: 20 }}>
+                <h3>Options architecturales</h3>
+
+                {optionalComponents.map((flag) => (
+                  <label key={flag} style={{ display: "block", marginBottom: 6 }}>
+                    <input
+                      type="checkbox"
+                      checked={flags.includes(flag)}
+                      onChange={() => toggleFlag(flag)}
+                    />{" "}
+                    {flag}
+                  </label>
+                ))}
+              </div>
+            )}
+          </section>
+
+          <section style={sectionStyle}>
+            <h2>4. Validation et résultat textuel</h2>
+            <ResultViewer result={displayedResult} />
+
+            {displayedProduct && (
+              <ConstraintPanel
+                architecture={architecture}
+                activeComponents={activeComponents}
+              />
+            )}
+          </section>
+
+          {displayedProduct && (
+            <section style={sectionStyle}>
+              <h2>5. Architecture produit dérivée</h2>
+              <GraphViewReactFlow
+                productElements={displayedProduct.elements}
+                architecture={architecture}
+                product={displayedProduct}
+              />
+            </section>
           )}
-        </div>
+
+          <section style={sectionStyle}>
+            <h2>Espace de configuration</h2>
+            <ConfigurationSpacePanel architecture={architecture} />
+
+            <div style={{ marginTop: 20 }}>
+              <button
+                onClick={() => setShowGeneratedProducts((prev) => !prev)}
+                style={{ padding: "10px 16px", cursor: "pointer" }}
+              >
+                {showGeneratedProducts
+                  ? "Masquer les architectures générées"
+                  : "Afficher les architectures générées"}
+              </button>
+
+              {showGeneratedProducts && (
+                <div style={{ marginTop: 12 }}>
+                  <GeneratedProductsPanel
+                    architecture={architecture}
+                    onLoadProduct={loadGeneratedProduct}
+                  />
+                </div>
+              )}
+            </div>
+          </section>
+        </>
       )}
 
     </div>

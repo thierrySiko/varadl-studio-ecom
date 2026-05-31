@@ -8,7 +8,10 @@ type ComponentNodeData = {
   kind?: "core" | "optional" | "variant" | "database" | "technology" | "product";
 };
 
-const stylesByKind: Record<NonNullable<ComponentNodeData["kind"]>, { border: string; background: string; badge: string }> = {
+const stylesByKind: Record<
+  NonNullable<ComponentNodeData["kind"]>,
+  { border: string; background: string; badge: string }
+> = {
   core: {
     border: "#2563eb",
     background: "#dbeafe",
@@ -41,6 +44,15 @@ const stylesByKind: Record<NonNullable<ComponentNodeData["kind"]>, { border: str
   },
 };
 
+function handleStyle(color: string) {
+  return {
+    width: 9,
+    height: 9,
+    background: color,
+    border: "2px solid white",
+  };
+}
+
 export default function ComponentNode({ data }: { data: ComponentNodeData }) {
   const kind = data.kind ?? "core";
   const style = stylesByKind[kind];
@@ -57,8 +69,10 @@ export default function ComponentNode({ data }: { data: ComponentNodeData }) {
         boxShadow: "0 4px 10px rgba(15, 23, 42, 0.08)",
       }}
     >
-      <Handle type="target" position={Position.Left} />
-      <Handle type="source" position={Position.Right} />
+      <Handle id="target-left" type="target" position={Position.Left} style={handleStyle(style.border)} />
+      <Handle id="target-top" type="target" position={Position.Top} style={handleStyle(style.border)} />
+      <Handle id="source-right" type="source" position={Position.Right} style={handleStyle(style.border)} />
+      <Handle id="source-bottom" type="source" position={Position.Bottom} style={handleStyle(style.border)} />
 
       <strong style={{ color: "#0f172a" }}>{data.label}</strong>
 

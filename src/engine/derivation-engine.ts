@@ -9,6 +9,7 @@ import type {
   VariationPoint,
 } from "../model/varadl-types";
 import { evaluateCondition, parseCondition } from "../parser/condition";
+import { solveArchitectureConfiguration } from "../solver/technology-solver";
 import type { ConditionContext } from "../parser/condition";
 
 function cloneDeep<T>(value: T): T {
@@ -29,6 +30,28 @@ function buildSelectionMap(configuration: Configuration): Map<string, string[]> 
     map.set(selection.variationPoint, selection.variants);
   }
   return map;
+}
+
+
+function completeSelectionMapWithSolver(
+  architecture: Architecture,
+  selectedByVp: Map<string, string[]>,
+  completedSelectedVariants: string[]
+): Map<string, string[]> {
+  const completed = new Set(completedSelectedVariants);
+  const next = new Map<string, string[]>(selectedByVp);
+
+  for (const vp of architecture.variationPoints) {
+    const selectedForVp = vp.variants
+      .map((variant) => variant.name)
+      .filter((variantName) => completed.has(variantName));
+
+    if (selectedForVp.length > 0) {
+      next.set(vp.name, selectedForVp);
+    }
+  }
+
+  return next;
 }
 
 function buildSelectedVariantNames(selectedByVp: Map<string, string[]>): Set<string> {
@@ -192,14 +215,26 @@ export function deriveProductArchitecture(
   architecture: Architecture,
   configuration: Configuration
 ): DeriveResult {
-  const selectedByVp = buildSelectionMap(configuration);
-  const configErrors = validateConfiguration(architecture, selectedByVp);
+  const initialSelectedByVp = buildSelectionMap(configuration);
+  const configErrors = validateConfiguration(architecture, initialSelectedByVp);
 
   if (configErrors.length > 0) {
     return { errors: configErrors };
   }
 
-  const includes = new Set(configuration.flags);
+  const solverResult = solveArchitectureConfiguration(architecture, configuration);
+
+  if (!solverResult.valid) {
+    return { errors: solverResult.errors };
+  }
+
+  const selectedByVp = completeSelectionMapWithSolver(
+    architecture,
+    initialSelectedByVp,
+    solverResult.completedSelectedVariants
+  );
+
+  const includes = new Set([...configuration.flags, ...solverResult.trueVariables]);
   const selectedVariantNames = buildSelectedVariantNames(selectedByVp);
   const derivedElements: ArchitecturalElement[] = [];
   const existingElements = new Set<string>();

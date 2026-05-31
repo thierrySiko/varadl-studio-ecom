@@ -6,6 +6,15 @@ type VariationPointNodeData = {
   selected?: boolean;
 };
 
+function handleStyle() {
+  return {
+    width: 9,
+    height: 9,
+    background: "#ea580c",
+    border: "2px solid white",
+  };
+}
+
 export default function VariationPointNode({ data }: { data: VariationPointNodeData }) {
   return (
     <div
@@ -19,10 +28,10 @@ export default function VariationPointNode({ data }: { data: VariationPointNodeD
         boxShadow: "0 4px 10px rgba(15, 23, 42, 0.08)",
       }}
     >
-      <Handle type="target" position={Position.Left} />
-      <Handle type="source" position={Position.Right} />
-      <Handle type="target" position={Position.Top} />
-      <Handle type="source" position={Position.Bottom} />
+      <Handle id="target-left" type="target" position={Position.Left} style={handleStyle()} />
+      <Handle id="target-top" type="target" position={Position.Top} style={handleStyle()} />
+      <Handle id="source-right" type="source" position={Position.Right} style={handleStyle()} />
+      <Handle id="source-bottom" type="source" position={Position.Bottom} style={handleStyle()} />
 
       <strong style={{ color: "#9a3412" }}>{data.label}</strong>
 
