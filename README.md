@@ -15,7 +15,7 @@ VarADL extends traditional Architecture Description Languages by allowing **vari
 
 A live version of the prototype is available at:
 
-https://thierrySiko.github.io/varadl-studio/
+https://thierrysiko.github.io/varadl-studio-ecom/
 
 ---
 
