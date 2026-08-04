@@ -65,6 +65,7 @@ type GeneratedConnector = {
   target: string;
 };
 
+//
 // Note de conception : le générateur produit une MAQUETTE VIDE (squelette),
 // pas un produit métier fonctionnel. Chaque route de service est un stub à
 // compléter ; chaque adaptateur expose un point d'entrée générique qui
