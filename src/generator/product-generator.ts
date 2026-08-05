@@ -87,7 +87,7 @@ type GeneratedApplicationModel = {
 
 function classifyComponent(name: string): ComponentRole {
   if (/gateway/i.test(name)) return "gateway";
-  if (/adapter|provider|client|connector/i.test(name)) return "adapter";
+  if (/adapter|provider|client|connector|notification|sender/i.test(name)) return "adapter";
   if (/database|db|postgres|mongo|mysql|redis/i.test(name)) return "database";
   if (/webapp|mobileapp|frontend|ui|portal|screen|clientapp/i.test(name)) return "frontend";
   if (/runtime|monolith|microservice/i.test(name)) return "runtime";
