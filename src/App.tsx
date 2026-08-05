@@ -286,6 +286,20 @@ function configurationToText(configuration: Configuration): string {
   return lines.join("\n");
 }
 
+function buildConfigurationText(
+  name: string,
+  selection: Record<string, string[]>,
+  flags: string[]
+): string {
+  return configurationToText({
+    name,
+    selectedVariants: Object.entries(selection).map(
+      ([variationPoint, variants]) => ({ variationPoint, variants })
+    ),
+    flags,
+  });
+}
+
 function isComponent(element: ArchitecturalElement): element is Component {
   return element.kind === "component";
 }
@@ -293,6 +307,7 @@ function isComponent(element: ArchitecturalElement): element is Component {
 export default function App() {
   const [architectureText, setArchitectureText] = useState(sampleArchitecture);
   const [configText, setConfigText] = useState(sampleConfiguration);
+  const [configName, setConfigName] = useState("InteractiveProduct");
 
   const [architecture, setArchitecture] = useState<Architecture | null>(null);
   const [selection, setSelection] = useState<Record<string, string[]>>({});
@@ -331,6 +346,7 @@ export default function App() {
     }
 
     setArchitecture(parsedArchitecture.result);
+    setConfigName(parsedConfiguration.result.name);
 
     const selectionState: Record<string, string[]> = {};
     for (const s of parsedConfiguration.result.selectedVariants) {
@@ -378,14 +394,25 @@ export default function App() {
     return deriveProductArchitecture(architecture, interactiveConfiguration);
   }, [architecture, interactiveConfiguration]);
 
-  const displayedConfigText = useMemo(() => {
-    if (loadedProduct) {
-      return configText;
+  // Reflète la saisie manuelle dans la zone de texte vers le panneau interactif.
+  // Ne touche jamais à `configText` lui-même : uniquement `selection`/`flags`,
+  // ce qui évite de réintroduire le bug où la zone de texte était réécrite
+  // pendant la frappe.
+  useEffect(() => {
+    if (!architecture) return;
+
+    const parsed = parseConfiguration(configText);
+    if (parsed.errors.length > 0 || !parsed.result) return;
+
+    const nextSelection: Record<string, string[]> = {};
+    for (const s of parsed.result.selectedVariants) {
+      nextSelection[s.variationPoint] = s.variants;
     }
 
-    if (!interactiveConfiguration) return configText;
-    return configurationToText(interactiveConfiguration);
-  }, [loadedProduct, interactiveConfiguration, configText]);
+    setSelection(nextSelection);
+    setFlags(parsed.result.flags);
+    setConfigName(parsed.result.name);
+  }, [configText, architecture]);
 
   const displayedProduct = useMemo(() => {
     if (loadedProduct) return loadedProduct;
@@ -416,10 +443,14 @@ export default function App() {
   function onSelectOne(vp: string, variant: string) {
     setLoadedProduct(null);
 
-    setSelection((prev) => ({
-      ...prev,
-      [vp]: variant ? [variant] : [],
-    }));
+    setSelection((prev) => {
+      const next = {
+        ...prev,
+        [vp]: variant ? [variant] : [],
+      };
+      setConfigText(buildConfigurationText(configName, next, flags));
+      return next;
+    });
   }
 
   function onToggleMany(vp: string, variant: string) {
@@ -429,23 +460,27 @@ export default function App() {
       const current = prev[vp] ?? [];
       const exists = current.includes(variant);
 
-      return {
+      const next = {
         ...prev,
         [vp]: exists
           ? current.filter((v) => v !== variant)
           : [...current, variant],
       };
+      setConfigText(buildConfigurationText(configName, next, flags));
+      return next;
     });
   }
 
   function toggleFlag(flag: string) {
     setLoadedProduct(null);
 
-    setFlags((prev) =>
-      prev.includes(flag)
+    setFlags((prev) => {
+      const next = prev.includes(flag)
         ? prev.filter((f) => f !== flag)
-        : [...prev, flag]
-    );
+        : [...prev, flag];
+      setConfigText(buildConfigurationText(configName, selection, next));
+      return next;
+    });
   }
 
   function loadGeneratedProduct(
@@ -638,7 +673,7 @@ export default function App() {
               />
 
               <ConfigEditor
-                value={displayedConfigText}
+                value={configText}
                 onChange={setConfigText}
               />
             </div>

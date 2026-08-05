@@ -11,7 +11,8 @@ import type { Edge, Node } from "reactflow";
 import { toPng, toSvg } from "html-to-image";
 import "reactflow/dist/style.css";
 
-import type { Architecture } from "../model/varadl-types";
+import type { Architecture, ArchitecturalElement, Component } from "../model/varadl-types";
+import { getLayoutedElements } from "./graph-layout";
 
 interface Props {
   architecture: Architecture;
@@ -21,6 +22,10 @@ interface Props {
 type FeatureKind = "root" | "mandatory" | "optional" | "abstract";
 type MarkerKind = "mandatory" | "optional" | "xor" | "or";
 
+function isComponent(element: ArchitecturalElement): element is Component {
+  return element.kind === "component";
+}
+
 function download(dataUrl: string, filename: string) {
   const a = document.createElement("a");
   a.href = dataUrl;
@@ -28,30 +33,11 @@ function download(dataUrl: string, filename: string) {
   a.click();
 }
 
+// Une fonctionnalité (feature) est considérée comme "sélectionnée" si c'est une
+// variante effectivement choisie dans la configuration courante. Généralisé à
+// n'importe quelle architecture (plus de mapping figé vers les noms e-commerce).
 function selectedFunctionalFeatures(selection?: Record<string, string[]>): Set<string> {
-  const selected = new Set<string>();
-  const values = Object.values(selection ?? {}).flat();
-
-  if (values.includes("StripeAdapter")) selected.add("CreditCard");
-  if (values.includes("PayPalAdapter")) selected.add("PayPal");
-  if (values.includes("StandardDelivery")) selected.add("StandardDelivery");
-  if (values.includes("ExpressDelivery")) selected.add("ExpressDelivery");
-  if (values.includes("EmailNotification")) selected.add("EmailNotification");
-  if (values.includes("SmsNotification")) selected.add("SmsNotification");
-  if (values.includes("RecommendationEnabled")) selected.add("RecommendationService");
-
-  // Les fonctionnalités de base sont toujours présentes dans l'exemple e-commerce.
-  [
-    "ProductCatalog",
-    "UserAccount",
-    "ShoppingCart",
-    "Checkout",
-    "Payment",
-    "Delivery",
-    "Notification",
-  ].forEach((feature) => selected.add(feature));
-
-  return selected;
+  return new Set(Object.values(selection ?? {}).flat());
 }
 
 function featureStyle(kind: FeatureKind, selected = false): React.CSSProperties {
@@ -132,6 +118,7 @@ function relationEdge(id: string, source: string, target: string): Edge {
 }
 
 export default function FeatureModelGraph({
+  architecture,
   selection,
 }: Props) {
   const ref = useRef<HTMLDivElement>(null);
@@ -140,29 +127,25 @@ export default function FeatureModelGraph({
     const selected = selectedFunctionalFeatures(selection);
     const nodes: Node[] = [];
     const edges: Edge[] = [];
+    const knownFeatureIds = new Set<string>();
 
-    function addFeature(
-      id: string,
-      label: string,
-      x: number,
-      y: number,
-      kind: FeatureKind = "mandatory"
-    ) {
+    function addFeature(id: string, label: string, kind: FeatureKind = "mandatory") {
+      knownFeatureIds.add(id);
       nodes.push({
         id,
-        position: { x, y },
+        position: { x: 0, y: 0 },
         sourcePosition: Position.Bottom,
         targetPosition: Position.Top,
         draggable: true,
         data: { label },
-        style: featureStyle(kind, selected.has(id)),
+        style: featureStyle(kind, selected.has(id) || kind === "root"),
       });
     }
 
-    function addMarker(id: string, kind: MarkerKind, x: number, y: number) {
+    function addMarker(id: string, kind: MarkerKind) {
       nodes.push({
         id,
-        position: { x, y },
+        position: { x: 0, y: 0 },
         sourcePosition: Position.Bottom,
         targetPosition: Position.Top,
         draggable: true,
@@ -172,14 +155,14 @@ export default function FeatureModelGraph({
       });
     }
 
-    function addMandatory(parent: string, child: string, marker: string, x: number, y: number) {
-      addMarker(marker, "mandatory", x, y);
+    function addMandatory(parent: string, child: string, marker: string) {
+      addMarker(marker, "mandatory");
       edges.push(relationEdge(`${parent}-${marker}`, parent, marker));
       edges.push(relationEdge(`${marker}-${child}`, marker, child));
     }
 
-    function addOptional(parent: string, child: string, marker: string, x: number, y: number) {
-      addMarker(marker, "optional", x, y);
+    function addOptional(parent: string, child: string, marker: string) {
+      addMarker(marker, "optional");
       edges.push(relationEdge(`${parent}-${marker}`, parent, marker));
       edges.push({
         ...relationEdge(`${marker}-${child}`, marker, child),
@@ -191,116 +174,87 @@ export default function FeatureModelGraph({
       parent: string,
       marker: string,
       markerKind: "xor" | "or",
-      children: string[],
-      x: number,
-      y: number
+      children: string[]
     ) {
-      addMarker(marker, markerKind, x, y);
+      addMarker(marker, markerKind);
       edges.push(relationEdge(`${parent}-${marker}`, parent, marker));
       children.forEach((child) => edges.push(relationEdge(`${marker}-${child}`, marker, child)));
     }
 
-    addFeature("ECommerceSystem", "ECommerceSystem", 520, 20, "root");
+    // --- Racine : l'architecture elle-même ---
+    const root = architecture.name;
+    addFeature(root, root, "root");
 
-    // Fonctionnalités métier principales.
-    addFeature("ProductCatalog", "ProductCatalog", 80, 190);
-    addFeature("UserAccount", "UserAccount", 260, 190);
-    addFeature("ShoppingCart", "ShoppingCart", 440, 190);
-    addFeature("Checkout", "Checkout", 620, 190);
-    addFeature("Payment", "Payment", 800, 190, "abstract");
-    addFeature("Delivery", "Delivery", 980, 190, "abstract");
-    addFeature("Notification", "Notification", 1160, 190, "abstract");
+    // --- Composants de premier niveau : mandatory ou optional ---
+    const topLevelComponents = architecture.elements.filter(isComponent);
+    for (const component of topLevelComponents) {
+      const kind: FeatureKind = component.optional ? "optional" : "mandatory";
+      addFeature(component.name, component.name, kind);
 
-    addMandatory("ECommerceSystem", "ProductCatalog", "m-catalog", 138, 125);
-    addMandatory("ECommerceSystem", "UserAccount", "m-user", 318, 125);
-    addMandatory("ECommerceSystem", "ShoppingCart", "m-cart", 498, 125);
-    addMandatory("ECommerceSystem", "Checkout", "m-checkout", 678, 125);
-    addMandatory("ECommerceSystem", "Payment", "m-payment", 858, 125);
-    addMandatory("ECommerceSystem", "Delivery", "m-delivery", 1038, 125);
-    addMandatory("ECommerceSystem", "Notification", "m-notification", 1218, 125);
+      if (component.optional) {
+        addOptional(root, component.name, `m-${component.name}`);
+      } else {
+        addMandatory(root, component.name, `m-${component.name}`);
+      }
+    }
 
-    // Fonctionnalités optionnelles.
-    addFeature("RecommendationService", "Recommendation", 260, 430, "optional");
-    addFeature("Reviews", "Reviews", 80, 430, "optional");
-    addFeature("Wishlist", "Wishlist", 440, 430, "optional");
-    addFeature("Promotions", "Promotions", 620, 430, "optional");
-    addFeature("LoyaltyProgram", "LoyaltyProgram", 800, 430, "optional");
+    // --- Points de variation : chaque variante devient une feature ---
+    for (const vp of architecture.variationPoints) {
+      const variantIds = vp.variants.map((variant) => variant.name);
 
-    addOptional("ECommerceSystem", "Reviews", "o-reviews", 138, 355);
-    addOptional("ECommerceSystem", "RecommendationService", "o-reco", 318, 355);
-    addOptional("ECommerceSystem", "Wishlist", "o-wishlist", 498, 355);
-    addOptional("ECommerceSystem", "Promotions", "o-promotions", 678, 355);
-    addOptional("ECommerceSystem", "LoyaltyProgram", "o-loyalty", 858, 355);
+      for (const variant of vp.variants) {
+        if (!knownFeatureIds.has(variant.name)) {
+          addFeature(variant.name, variant.name, "mandatory");
+        }
+      }
 
-    // Groupes fonctionnels.
-    addFeature("CreditCard", "CreditCard", 720, 350);
-    addFeature("PayPal", "PayPal", 880, 350);
-    addGroup("Payment", "xor-payment", "xor", ["CreditCard", "PayPal"], 820, 285);
+      if (vp.type === "alternative") {
+        addGroup(root, `xor-${vp.name}`, "xor", variantIds);
+      } else if (vp.type === "or") {
+        addGroup(root, `or-${vp.name}`, "or", variantIds);
+      } else if (variantIds.length <= 1) {
+        // "optional" avec une seule variante : simple feature optionnelle.
+        variantIds.forEach((variantId) => addOptional(root, variantId, `o-${variantId}`));
+      } else {
+        // "optional" avec plusieurs variantes (0..1 parmi N) : rendu comme un
+        // groupe XOR, la sémantique exacte (0 ou 1, pas exactement 1) est
+        // rappelée dans la légende de la vue.
+        addGroup(root, `xor-${vp.name}`, "xor", variantIds);
+      }
+    }
 
-    addFeature("StandardDelivery", "Standard", 900, 350);
-    addFeature("ExpressDelivery", "Express", 1060, 350);
-    addGroup("Delivery", "xor-delivery", "xor", ["StandardDelivery", "ExpressDelivery"], 1000, 285);
+    // --- Contraintes requires/excludes : reliées à n'importe quelle feature connue ---
+    for (const constraint of architecture.constraints) {
+      if (!knownFeatureIds.has(constraint.source) || !knownFeatureIds.has(constraint.target)) {
+        // La contrainte porte sur un élément qui n'est pas représenté comme
+        // feature de premier niveau (ex. composant interne à une variante) :
+        // on ne peut pas tracer l'arête dans cette vue fonctionnelle simplifiée.
+        continue;
+      }
 
-    addFeature("EmailNotification", "Email", 1080, 350);
-    addFeature("SmsNotification", "SMS", 1240, 350);
-    addFeature("PushNotification", "Push", 1400, 350);
-    addGroup(
-      "Notification",
-      "or-notification",
-      "or",
-      ["EmailNotification", "SmsNotification", "PushNotification"],
-      1220,
-      285
-    );
-
-    // Contraintes transversales fonctionnelles.
-    const constraintEdges: Edge[] = [
-      {
-        id: "requires-reco-catalog",
-        source: "RecommendationService",
-        target: "ProductCatalog",
-        label: "requires",
+      const isRequires = constraint.type === "requires";
+      edges.push({
+        id: `${constraint.type}-${constraint.source}-${constraint.target}`,
+        source: constraint.source,
+        target: constraint.target,
+        label: constraint.type,
         type: "bezier",
-        markerEnd: { type: MarkerType.ArrowClosed, color: "#16a34a" },
-        style: { stroke: "#16a34a", strokeWidth: 2, strokeDasharray: "7 5" },
-        labelStyle: { fill: "#166534", fontWeight: 700, fontSize: 11 },
-      },
-      {
-        id: "requires-reviews-account",
-        source: "Reviews",
-        target: "UserAccount",
-        label: "requires",
-        type: "bezier",
-        markerEnd: { type: MarkerType.ArrowClosed, color: "#16a34a" },
-        style: { stroke: "#16a34a", strokeWidth: 2, strokeDasharray: "7 5" },
-        labelStyle: { fill: "#166534", fontWeight: 700, fontSize: 11 },
-      },
-      {
-        id: "requires-wishlist-account",
-        source: "Wishlist",
-        target: "UserAccount",
-        label: "requires",
-        type: "bezier",
-        markerEnd: { type: MarkerType.ArrowClosed, color: "#16a34a" },
-        style: { stroke: "#16a34a", strokeWidth: 2, strokeDasharray: "7 5" },
-        labelStyle: { fill: "#166534", fontWeight: 700, fontSize: 11 },
-      },
-      {
-        id: "excludes-guest-loyalty",
-        source: "LoyaltyProgram",
-        target: "PayPal",
-        label: "example excludes",
-        type: "bezier",
-        markerEnd: { type: MarkerType.ArrowClosed, color: "#dc2626" },
-        style: { stroke: "#dc2626", strokeWidth: 2, strokeDasharray: "7 5" },
-        labelStyle: { fill: "#991b1b", fontWeight: 700, fontSize: 11 },
-      },
-    ];
+        markerEnd: { type: MarkerType.ArrowClosed, color: isRequires ? "#16a34a" : "#dc2626" },
+        style: {
+          stroke: isRequires ? "#16a34a" : "#dc2626",
+          strokeWidth: 2,
+          strokeDasharray: "7 5",
+        },
+        labelStyle: {
+          fill: isRequires ? "#166534" : "#991b1b",
+          fontWeight: 700,
+          fontSize: 11,
+        },
+      });
+    }
 
-    edges.push(...constraintEdges);
-
-    return { nodes, edges };
-  }, [selection]);
+    return getLayoutedElements(nodes, edges, "TB");
+  }, [architecture, selection]);
 
   const [nodes, setNodes, onNodesChange] = useNodesState(layout.nodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(layout.edges);
@@ -338,10 +292,12 @@ export default function FeatureModelGraph({
       <h2>Feature Model fonctionnel</h2>
 
       <p style={{ color: "#475569", maxWidth: 950 }}>
-        Cette vue représente le Feature Model au sens SPL classique : elle se concentre
-        sur les fonctionnalités visibles du produit. Les choix techniques comme REST,
-        EventBus, PostgreSQL ou Docker restent modélisés au niveau architectural dans
-        VarADL.
+        Cette vue dérive automatiquement un Feature Model au sens SPL classique à
+        partir de l'architecture VarADL courante : chaque composant de premier niveau,
+        point de variation et contrainte y est représenté comme une fonctionnalité.
+        Un point de variation de type <em>optional</em> comportant plusieurs variantes
+        est affiché avec le marqueur △ (0 ou 1 variante), à ne pas confondre avec un
+        groupe alternatif strict (exactement une variante).
       </p>
 
       <div
