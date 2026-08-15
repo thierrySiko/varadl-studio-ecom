@@ -521,8 +521,8 @@ export default function App() {
   }, []);
 
   const workflowSteps = [
-    "1. Feature Model",
-    "2. Architecture SPL",
+    "1. Architecture SPL",
+    "2. Feature Model",
     "3. Configuration",
     "4. Validation / Solveur",
     "5. Architecture dérivée",
@@ -543,8 +543,10 @@ export default function App() {
 
       <p>
         Prototype d&apos;ADL intégrant la variabilité architecturale et technologique des SPL.
-        Le flux commence par le Feature Model fonctionnel, puis projette les choix vers
-        l&apos;architecture VarADL, la configuration, la validation par solveur et l&apos;architecture dérivée.
+        Le flux part de l&apos;architecture de référence VarADL, dont sont automatiquement
+        dérivées une vue Feature Model fonctionnelle et une vue architecturale ; une
+        configuration produit est ensuite validée par solveur SAT avant de générer
+        l&apos;architecture dérivée.
       </p>
 
       <div
@@ -605,12 +607,12 @@ export default function App() {
       {architecture && (
         <>
           <section style={sectionStyle}>
-            <h2>1. Feature Model fonctionnel</h2>
+            <h2>1. Architecture de référence SPL</h2>
             <p style={{ marginTop: 0, color: "#475569" }}>
-              Cette vue représente la variabilité fonctionnelle du produit. Les choix
-              technologiques restent décrits dans l&apos;architecture VarADL.
+              Cette vue montre les composants, points de variation, variants architecturaux
+              et contraintes utilisés pour dériver les architectures produit.
             </p>
-            <FeatureModelGraph
+            <SPLGraphView
               architecture={architecture}
               selection={selection}
             />
@@ -680,12 +682,13 @@ export default function App() {
           </details>
 
           <section style={sectionStyle}>
-            <h2>2. Architecture de référence SPL</h2>
+            <h2>2. Feature Model fonctionnel</h2>
             <p style={{ marginTop: 0, color: "#475569" }}>
-              Cette vue montre les composants, points de variation, variants architecturaux
-              et contraintes utilisés pour dériver les architectures produit.
+              Cette vue dérive automatiquement la variabilité fonctionnelle du produit à
+              partir de l&apos;architecture VarADL ci-dessus. Les choix technologiques
+              restent décrits dans l&apos;architecture VarADL.
             </p>
-            <SPLGraphView
+            <FeatureModelGraph
               architecture={architecture}
               selection={selection}
             />
