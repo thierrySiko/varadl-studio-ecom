@@ -179,6 +179,27 @@ export function solveArchitectureConfiguration(
     solver.require(selected);
   }
 
+  // Pour chaque point de variation explicitement mentionné dans la
+  // configuration, les variantes NON sélectionnées de ce même point sont
+  // forcées à faux. Sans cela, une contrainte "requires" ciblant une
+  // variante d'un point de type `or`/`optional` peut être satisfaite en
+  // activant silencieusement une variante que l'utilisateur n'a jamais
+  // choisie, alors que sa sélection était explicite et partielle sur ce
+  // point précis. Les points de variation absents de la configuration
+  // restent libres : le solveur peut toujours les compléter automatiquement
+  // (comportement voulu, cf. `completedSelectedVariants`).
+  const selectedByVpForClosure = selectedVariantsByVp(configuration);
+  for (const vp of architecture.variationPoints) {
+    const explicitlySelected = selectedByVpForClosure.get(vp.name);
+    if (explicitlySelected === undefined) continue;
+
+    for (const variant of vp.variants) {
+      if (!explicitlySelected.includes(variant.name)) {
+        solver.require(Logic.not(variant.name));
+      }
+    }
+  }
+
   for (const flag of configuration.flags) {
     solver.require(flag);
   }
